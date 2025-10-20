@@ -1,0 +1,389 @@
+#1. Libraries
+```{r}
+library(ggplot2)
+library(ggforce)  
+library(tidyverse)
+library(rstatix)
+library(dgof)
+library(ggpubr)
+
+#PCI function
+library(fistools)
+
+```
+
+#2. Default-settings for PCI
+```{r}
+schaalfactor <- 1
+```
+
+#3. Data
+```{r}
+Survey_data <- read.csv("./Input/QeverBreed_2017_2020_2023.csv",
+                        header = TRUE,
+                        sep = ",") 
+#Work data
+work_dataset <- Survey_data 
+work_dataset <- tibble::rowid_to_column(work_dataset, "ID") #add ID-column
+
+```
+
+#4. Acceptance measures
+##4.1 PCI
+```{r}
+dataset_maatregelen <- work_dataset %>% 
+  dplyr::select(ID, WBA, GemMet, Year, Q19a:Q19f) %>% 
+  gather(key = "Question", value = "Score", Q19a:Q19f) %>%
+  filter(Score != "NA") %>%
+  mutate(Score = Score - 3)
+
+opties_maatregelen <- letters[1:6]
+labels_maatregelen <-  c('Non-electric fencing', 'Electric fencing', 
+                         'Hunting', 'Cages', 'Relocation', 'Anticonception')
+
+dataset_pci_maatregelen <- dataset_maatregelen %>%
+   mutate(
+    vraag_nr = substring(Question,1,3),
+    vraag_optie = substring(Question,4,6),
+    vraag_label = factor(vraag_optie,opties_maatregelen,labels_maatregelen),
+     ) %>%
+    group_by(vraag_label, WBA, Year) %>%
+    summarize(meanAnswer = mean(Score), 
+              sdAnswer = sd(Score),
+              pci2 = qd_pci2(Score),
+              aantal = length(ID)) %>%
+  mutate(WBA = case_when(WBA == 1 ~ "Wild boar area",
+                            WBA == 0 ~ "No wild boar area"))
+
+dataset_pci_maatregelen$vraag = "vraag1"
+
+dataset_pci_maatregelen$Year <- as.factor(dataset_pci_maatregelen$Year)
+
+dataset_pci_maatregelen$vraag = "vraag1"
+
+dataset_pci_maatregelen$Year <- as.factor(dataset_pci_maatregelen$Year)
+
+#PCI plot optie 
+pci_maatregelen <- ggplot(dataset_pci_maatregelen) + 
+   geom_circle(aes(x0 = meanAnswer, 
+                  y0 = as.numeric(Year)/schaalfactor, 
+                  r = pci2,
+                  colour = WBA,
+                  fill = WBA),
+               alpha = 0.75) +
+  scale_x_continuous(name = "Mean acceptation",
+                     limits = c(-2,2)) + 
+  scale_y_continuous(name ="",
+                     breaks = unique(as.numeric(dataset_pci_maatregelen$Year)/schaalfactor),
+                     labels = unique(dataset_pci_maatregelen$Year)) + 
+  facet_wrap(~vraag_label,
+             ncol = 3) +
+  coord_fixed() +
+   scale_fill_manual(name = "",
+                     values=c("orange", "royalblue"))+
+   scale_colour_manual(name = "",
+                       values=c("orange", "royalblue"))+
+  theme_bw()+
+   theme(axis.text = element_text(size=5),
+        axis.title = element_text(size=5),
+        strip.text = element_text(size = 5),
+        legend.text = element_text(size=5))
+
+
+pci_maatregelen
+```
+
+
+##4.2 Anova
+###4.2.1 Non-Electric fencing (same for other measures)
+```{r}
+nonelectric_fencing <- dataset_pci_maatregelen %>%
+  filter(vraag_label == "Non-electric fencing")
+
+#Data anova
+nonelectric_fencing_data <- work_dataset %>% 
+  dplyr::select(ID, 
+                WBA, 
+                Year,
+                Q19a) %>% 
+  gather(key = "Question", 
+         value = "Score", 
+         Q19a) %>%
+  filter(Score != 6) %>%
+  mutate(Score = Score - 3) %>%
+  transmute(ID, 
+            WBA = factor(WBA), 
+            Question = factor(Question),
+            Year = factor(Year), 
+            Score)
+
+Anova_nonelectric_fencing <- aov(data = nonelectric_fencing_data, Score ~ Year*WBA)
+
+Anova_nonelectric_fencing2 <- aov(data = nonelectric_fencing_data, Score ~ Year+WBA)
+anova(Anova_nonelectric_fencing2, Anova_nonelectric_fencing)
+
+summary_nonelectric_fencing <- summary(Anova_nonelectric_fencing2)
+summary_nonelectric_fencing
+
+tamhane_nonelectric_fencing_year <- pairwise.t.test(x = nonelectric_fencing_data$Score,
+                                                    g = nonelectric_fencing_data$Year,
+                                                    p.adjust.method = "holm",
+                                                    pool.sd = FALSE)  # Welch t-test
+tamhane_nonelectric_fencing_year
+
+tamhane_nonelectric_fencing_wba <- pairwise.t.test(x = nonelectric_fencing_data$Score,
+                                                   g = nonelectric_fencing_data$WBA,
+                                                   p.adjust.method = "holm",
+                                                   pool.sd = FALSE)  # Welch t-test
+tamhane_nonelectric_fencing_wba
+
+means_year <- tapply(nonelectric_fencing_data$Score, nonelectric_fencing_data$Year, mean)
+
+year_combos <- combn(names(means_year), 2, simplify = FALSE)
+
+diffs_year <- sapply(year_combos, function(pair) {
+  means_year[pair[2]] - means_year[pair[1]]})
+
+diff_table_year <- data.frame(Group1 = sapply(year_combos, `[`, 1),
+                              Group2 = sapply(year_combos, `[`, 2),
+                              MeanDifference = diffs_year)
+
+tamhane_year <- pairwise.t.test(x = nonelectric_fencing_data$Score,
+                                 g = nonelectric_fencing_data$Year,
+                                 p.adjust.method = "holm",
+                                 pool.sd = FALSE)
+
+pvals_year <- as.data.frame(as.table(tamhane_year$p.value))
+colnames(pvals_year) <- c("Group1", "Group2", "p_value")
+
+
+pvals_year$Group1 <- as.character(pvals_year$Group1)
+pvals_year$Group2 <- as.character(pvals_year$Group2)
+
+pvals_year_sorted <- pvals_year
+pvals_year_sorted$min <- pmin(pvals_year$Group1, pvals_year$Group2)
+pvals_year_sorted$max <- pmax(pvals_year$Group1, pvals_year$Group2)
+
+pvals_year_clean <- subset(pvals_year_sorted, !is.na(p_value))
+
+pvals_year_clean <- pvals_year_clean[, c("min", "max", "p_value")]
+colnames(pvals_year_clean) <- c("Group1", "Group2", "p_value")
+
+tamhane_results_year <- merge(diff_table_year, pvals_year_clean, by = c("Group1", "Group2"))
+
+print(tamhane_results_year)
+
+
+means_wba <- tapply(nonelectric_fencing_data$Score, nonelectric_fencing_data$WBA, mean)
+
+wba_combos <- combn(names(means_wba), 2, simplify = FALSE)
+
+diffs_wba <- sapply(wba_combos, function(pair) {
+  means_wba[pair[2]] - means_wba[pair[1]]
+})
+
+diff_table_wba <- data.frame(
+  Group1 = sapply(wba_combos, `[`, 1),
+  Group2 = sapply(wba_combos, `[`, 2),
+  MeanDifference = diffs_wba
+)
+
+tamhane_wba <- pairwise.t.test(x = nonelectric_fencing_data$Score,
+                                g = nonelectric_fencing_data$WBA,
+                                p.adjust.method = "holm",
+                                pool.sd = FALSE)
+
+pvals_wba <- as.data.frame(as.table(tamhane_wba$p.value))
+colnames(pvals_wba) <- c("Group1", "Group2", "p_value")
+
+pvals_wba$Group1 <- as.character(pvals_wba$Group1)
+pvals_wba$Group2 <- as.character(pvals_wba$Group2)
+
+pvals_wba$min <- pmin(pvals_wba$Group1, pvals_wba$Group2)
+pvals_wba$max <- pmax(pvals_wba$Group1, pvals_wba$Group2)
+
+pvals_wba_clean <- subset(pvals_wba, !is.na(p_value))
+pvals_wba_clean <- pvals_wba_clean[, c("min", "max", "p_value")]
+colnames(pvals_wba_clean) <- c("Group1", "Group2", "p_value")
+
+tamhane_results_wba <- merge(diff_table_wba, pvals_wba_clean, by = c("Group1", "Group2"))
+
+print(tamhane_results_wba)
+```
+
+#5. Presence wild boar
+##5.1 PCI
+```{r}
+ 
+dataset_aanwezigheid <- work_dataset %>% 
+  dplyr::select(ID, WBA, Year, Q12,Q13) %>% 
+  gather(key = "Question", value = "Score", Q12,Q13) %>%
+  filter(Score != "NA") %>%
+  filter(Score != 6) %>% 
+  mutate(Score = Score - 3)
+
+
+
+dataset_pci_aanwezigheid <- dataset_aanwezigheid %>%
+   mutate(vraag_label = case_when(Question == "Q12" ~ "Flanders-general",
+                                  Question == "Q13" ~ "Own region")) %>%
+    group_by(vraag_label, WBA, Year) %>%
+    summarize(meanAnswer = mean(Score), 
+              pci2 = qd_pci2(Score),
+              aantal = length(ID)) %>%
+  mutate(WBA = case_when(WBA == 1 ~ "Wild boar area",
+                            WBA == 0 ~ "No wild boar area"))
+
+dataset_pci_aanwezigheid$vraag = "vraag1"
+
+dataset_pci_aanwezigheid$Year <- as.factor(dataset_pci_aanwezigheid$Year)
+dataset_pci_aanwezigheid$vraag_label <- as.factor(dataset_pci_aanwezigheid$vraag_label)
+
+dataset_pci_aanwezigheid <- dataset_pci_aanwezigheid %>%
+  mutate(group = paste(WBA, "-", Year))
+
+
+pci_aanwezigheid <- ggplot(dataset_pci_aanwezigheid) + 
+   geom_circle(aes(x0 = meanAnswer, 
+                  y0 = as.numeric(Year)/schaalfactor, 
+                  r = pci2,
+                  colour = WBA,
+                  fill = WBA),
+               alpha = 0.75,
+               size = 1) +
+  scale_x_continuous(name = "Mean attitude",
+                     limits = c(-2,2)) +
+   facet_wrap(~vraag_label,
+             ncol = 2) +
+  scale_y_continuous(name ="",
+                     breaks = unique(as.numeric(dataset_pci_aanwezigheid$Year)/schaalfactor),
+                     labels = unique(dataset_pci_aanwezigheid$Year)) + 
+  coord_fixed() +
+   scale_fill_manual(name = "",
+                     values=c("orange", "royalblue"))+
+   scale_colour_manual(name = "",
+                       values=c("orange", "royalblue"))+
+  theme_bw()+
+   theme(axis.text = element_text(size=10),
+        axis.title = element_text(size=10),
+        strip.text = element_text(size = 10),
+        legend.text = element_text(size=10))
+
+pci_aanwezigheid
+
+```
+
+##5.2 Anova
+###5.2.1 Flanders-general (same for own region)
+```{r}
+flanders <- dataset_pci_aanwezigheid %>%
+  filter(vraag_label == "Flanders-general")
+
+flanders_data <- work_dataset %>% 
+  dplyr::select(ID, 
+                WBA, 
+                Year,
+                Q12) %>% 
+  gather(key = "Question", 
+         value = "Score", 
+         Q12) %>%
+  filter(Score != 6) %>%
+  mutate(Score = Score - 3) %>%
+  transmute(ID, 
+            WBA = factor(WBA), 
+            Question = factor(Question),
+            Year = factor(Year), 
+            Score)
+
+
+Anova_flanders <- aov(data = flanders_data,  Score ~ Year*WBA)
+Anova_flanders2 <- aov(data = flanders_data,   Score ~ Year+WBA)
+anova(Anova_flanders2, Anova_flanders)
+summary_flanders <- summary(Anova_flanders)
+summary_flanders
+
+
+flanders_data$Year_WBA <- interaction(flanders_data$Year, flanders_data$WBA)
+levels(flanders_data$Year_WBA)
+
+tamhane_flanders_interactie <- pairwise.t.test(x = flanders_data$Score,
+                                       g = flanders_data$Year_WBA,
+                                       p.adjust.method = "holm",
+                                       pool.sd = FALSE)
+
+tamhane_flanders_interactie
+
+means_year <- tapply(flanders_data$Score, flanders_data$Year, mean)
+
+year_combos <- combn(names(means_year), 2, simplify = FALSE)
+
+diffs_year <- sapply(year_combos, function(pair) {
+  means_year[pair[2]] - means_year[pair[1]]})
+
+diff_table_year <- data.frame(Group1 = sapply(year_combos, `[`, 1),
+                              Group2 = sapply(year_combos, `[`, 2),
+                              MeanDifference = diffs_year)
+
+tamhane_year <- pairwise.t.test(x = flanders_data$Score,
+                                 g = flanders_data$Year,
+                                 p.adjust.method = "holm",
+                                 pool.sd = FALSE)
+
+pvals_year <- as.data.frame(as.table(tamhane_year$p.value))
+colnames(pvals_year) <- c("Group1", "Group2", "p_value")
+
+
+pvals_year$Group1 <- as.character(pvals_year$Group1)
+pvals_year$Group2 <- as.character(pvals_year$Group2)
+
+pvals_year_sorted <- pvals_year
+pvals_year_sorted$min <- pmin(pvals_year$Group1, pvals_year$Group2)
+pvals_year_sorted$max <- pmax(pvals_year$Group1, pvals_year$Group2)
+
+pvals_year_clean <- subset(pvals_year_sorted, !is.na(p_value))
+
+pvals_year_clean <- pvals_year_clean[, c("min", "max", "p_value")]
+colnames(pvals_year_clean) <- c("Group1", "Group2", "p_value")
+
+tamhane_results_year <- merge(diff_table_year, pvals_year_clean, by = c("Group1", "Group2"))
+
+print(tamhane_results_year)
+
+
+means_wba <- tapply(flanders_data$Score, flanders_data$WBA, mean)
+
+wba_combos <- combn(names(means_wba), 2, simplify = FALSE)
+
+diffs_wba <- sapply(wba_combos, function(pair) {
+  means_wba[pair[2]] - means_wba[pair[1]]
+})
+
+diff_table_wba <- data.frame(
+  Group1 = sapply(wba_combos, `[`, 1),
+  Group2 = sapply(wba_combos, `[`, 2),
+  MeanDifference = diffs_wba
+)
+
+tamhane_wba <- pairwise.t.test(x = flanders_data$Score,
+                                g = flanders_data$WBA,
+                                p.adjust.method = "holm",
+                                pool.sd = FALSE)
+
+pvals_wba <- as.data.frame(as.table(tamhane_wba$p.value))
+colnames(pvals_wba) <- c("Group1", "Group2", "p_value")
+
+pvals_wba$Group1 <- as.character(pvals_wba$Group1)
+pvals_wba$Group2 <- as.character(pvals_wba$Group2)
+
+pvals_wba$min <- pmin(pvals_wba$Group1, pvals_wba$Group2)
+pvals_wba$max <- pmax(pvals_wba$Group1, pvals_wba$Group2)
+
+pvals_wba_clean <- subset(pvals_wba, !is.na(p_value))
+pvals_wba_clean <- pvals_wba_clean[, c("min", "max", "p_value")]
+colnames(pvals_wba_clean) <- c("Group1", "Group2", "p_value")
+
+tamhane_results_wba <- merge(diff_table_wba, pvals_wba_clean, by = c("Group1", "Group2"))
+
+print(tamhane_results_wba)
+```
+
