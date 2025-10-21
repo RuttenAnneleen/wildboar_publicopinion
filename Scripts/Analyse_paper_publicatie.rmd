@@ -19,9 +19,9 @@ schaalfactor <- 1
 
 #3. Data
 ```{r}
-Survey_data <- read.csv("./Input/QeverBreed_2017_2020_2023.csv",
+Survey_data <- read.csv("./Input/survey_data.csv",
                         header = TRUE,
-                        sep = ",") 
+                        sep = ";") 
 #Work data
 work_dataset <- Survey_data 
 work_dataset <- tibble::rowid_to_column(work_dataset, "ID") #add ID-column
@@ -31,23 +31,23 @@ work_dataset <- tibble::rowid_to_column(work_dataset, "ID") #add ID-column
 #4. Acceptance measures
 ##4.1 PCI
 ```{r}
-dataset_maatregelen <- work_dataset %>% 
-  dplyr::select(ID, WBA, GemMet, Year, Q19a:Q19f) %>% 
+data_measures <- work_dataset %>% 
+  dplyr::select(ID, WBA, Year, Q19a:Q19f) %>% 
   gather(key = "Question", value = "Score", Q19a:Q19f) %>%
   filter(Score != "NA") %>%
   mutate(Score = Score - 3)
 
-opties_maatregelen <- letters[1:6]
-labels_maatregelen <-  c('Non-electric fencing', 'Electric fencing', 
+options_measures <- letters[1:6]
+labels_measures <-  c('Non-electric fencing', 'Electric fencing', 
                          'Hunting', 'Cages', 'Relocation', 'Anticonception')
 
-dataset_pci_maatregelen <- dataset_maatregelen %>%
+data_pci_measures <- data_measures %>%
    mutate(
-    vraag_nr = substring(Question,1,3),
-    vraag_optie = substring(Question,4,6),
-    vraag_label = factor(vraag_optie,opties_maatregelen,labels_maatregelen),
+    question_nr = substring(Question,1,3),
+    question_option = substring(Question,4,6),
+    question_label = factor(question_option,options_measures,labels_measures),
      ) %>%
-    group_by(vraag_label, WBA, Year) %>%
+    group_by(question_label, WBA, Year) %>%
     summarize(meanAnswer = mean(Score), 
               sdAnswer = sd(Score),
               pci2 = qd_pci2(Score),
@@ -55,16 +55,16 @@ dataset_pci_maatregelen <- dataset_maatregelen %>%
   mutate(WBA = case_when(WBA == 1 ~ "Wild boar area",
                             WBA == 0 ~ "No wild boar area"))
 
-dataset_pci_maatregelen$vraag = "vraag1"
+data_pci_measures$question = "question1"
 
-dataset_pci_maatregelen$Year <- as.factor(dataset_pci_maatregelen$Year)
+data_pci_measures$Year <- as.factor(data_pci_measures$Year)
 
-dataset_pci_maatregelen$vraag = "vraag1"
+data_pci_measures$question = "question1"
 
-dataset_pci_maatregelen$Year <- as.factor(dataset_pci_maatregelen$Year)
+data_pci_measures$Year <- as.factor(data_pci_measures$Year)
 
-#PCI plot optie 
-pci_maatregelen <- ggplot(dataset_pci_maatregelen) + 
+#PCI plot 
+pci_measures <- ggplot(data_pci_measures) + 
    geom_circle(aes(x0 = meanAnswer, 
                   y0 = as.numeric(Year)/schaalfactor, 
                   r = pci2,
@@ -74,9 +74,9 @@ pci_maatregelen <- ggplot(dataset_pci_maatregelen) +
   scale_x_continuous(name = "Mean acceptation",
                      limits = c(-2,2)) + 
   scale_y_continuous(name ="",
-                     breaks = unique(as.numeric(dataset_pci_maatregelen$Year)/schaalfactor),
-                     labels = unique(dataset_pci_maatregelen$Year)) + 
-  facet_wrap(~vraag_label,
+                     breaks = unique(as.numeric(data_pci_measures$Year)/schaalfactor),
+                     labels = unique(data_pci_measures$Year)) + 
+  facet_wrap(~question_label,
              ncol = 3) +
   coord_fixed() +
    scale_fill_manual(name = "",
@@ -90,15 +90,15 @@ pci_maatregelen <- ggplot(dataset_pci_maatregelen) +
         legend.text = element_text(size=5))
 
 
-pci_maatregelen
+pci_measures
 ```
 
 
 ##4.2 Anova
 ###4.2.1 Non-Electric fencing (same for other measures)
 ```{r}
-nonelectric_fencing <- dataset_pci_maatregelen %>%
-  filter(vraag_label == "Non-electric fencing")
+nonelectric_fencing <- data_pci_measures %>%
+  filter(question_label == "Non-electric fencing")
 
 #Data anova
 nonelectric_fencing_data <- work_dataset %>% 
@@ -215,7 +215,7 @@ print(tamhane_results_wba)
 ##5.1 PCI
 ```{r}
  
-dataset_aanwezigheid <- work_dataset %>% 
+data_presence <- work_dataset %>% 
   dplyr::select(ID, WBA, Year, Q12,Q13) %>% 
   gather(key = "Question", value = "Score", Q12,Q13) %>%
   filter(Score != "NA") %>%
@@ -224,26 +224,26 @@ dataset_aanwezigheid <- work_dataset %>%
 
 
 
-dataset_pci_aanwezigheid <- dataset_aanwezigheid %>%
-   mutate(vraag_label = case_when(Question == "Q12" ~ "Flanders-general",
+data_pci_presence <- data_presence %>%
+   mutate(question_label = case_when(Question == "Q12" ~ "Flanders-general",
                                   Question == "Q13" ~ "Own region")) %>%
-    group_by(vraag_label, WBA, Year) %>%
+    group_by(question_label, WBA, Year) %>%
     summarize(meanAnswer = mean(Score), 
               pci2 = qd_pci2(Score),
               aantal = length(ID)) %>%
   mutate(WBA = case_when(WBA == 1 ~ "Wild boar area",
                             WBA == 0 ~ "No wild boar area"))
 
-dataset_pci_aanwezigheid$vraag = "vraag1"
+data_pci_presence$question = "question1"
 
-dataset_pci_aanwezigheid$Year <- as.factor(dataset_pci_aanwezigheid$Year)
-dataset_pci_aanwezigheid$vraag_label <- as.factor(dataset_pci_aanwezigheid$vraag_label)
+data_pci_presence$Year <- as.factor(data_pci_presence$Year)
+data_pci_presence$question_label <- as.factor(data_pci_presence$question_label)
 
-dataset_pci_aanwezigheid <- dataset_pci_aanwezigheid %>%
+data_pci_presence <- data_pci_presence %>%
   mutate(group = paste(WBA, "-", Year))
 
 
-pci_aanwezigheid <- ggplot(dataset_pci_aanwezigheid) + 
+pci_presence <- ggplot(data_pci_presence) + 
    geom_circle(aes(x0 = meanAnswer, 
                   y0 = as.numeric(Year)/schaalfactor, 
                   r = pci2,
@@ -253,11 +253,11 @@ pci_aanwezigheid <- ggplot(dataset_pci_aanwezigheid) +
                size = 1) +
   scale_x_continuous(name = "Mean attitude",
                      limits = c(-2,2)) +
-   facet_wrap(~vraag_label,
+   facet_wrap(~question_label,
              ncol = 2) +
   scale_y_continuous(name ="",
-                     breaks = unique(as.numeric(dataset_pci_aanwezigheid$Year)/schaalfactor),
-                     labels = unique(dataset_pci_aanwezigheid$Year)) + 
+                     breaks = unique(as.numeric(data_pci_presence$Year)/schaalfactor),
+                     labels = unique(data_pci_presence$Year)) + 
   coord_fixed() +
    scale_fill_manual(name = "",
                      values=c("orange", "royalblue"))+
@@ -269,15 +269,15 @@ pci_aanwezigheid <- ggplot(dataset_pci_aanwezigheid) +
         strip.text = element_text(size = 10),
         legend.text = element_text(size=10))
 
-pci_aanwezigheid
+pci_presence
 
 ```
 
 ##5.2 Anova
 ###5.2.1 Flanders-general (same for own region)
 ```{r}
-flanders <- dataset_pci_aanwezigheid %>%
-  filter(vraag_label == "Flanders-general")
+flanders <- data_pci_presence %>%
+  filter(question_label == "Flanders-general")
 
 flanders_data <- work_dataset %>% 
   dplyr::select(ID, 
